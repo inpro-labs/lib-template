@@ -3,6 +3,21 @@ name: Publish to GitHub Packages
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - premajor
+          - prepatch
+          - prerelease
+          - from-git
+        default: 'patch'
 
 jobs:
   build-and-publish:
@@ -10,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -17,16 +34,38 @@ jobs:
           node-version: 22.x
           registry-url: https://npm.pkg.github.com/
 
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
       - name: Install dependencies
         run: npm install
 
       - name: Build with Grunt
         run: npx grunt
 
+      - name: Run tests
+        run: npm run test
+
+      - name: Commit build changes
+        run: |
+          git add .
+          git diff --staged --quiet || git commit -m "Build artifacts for version bump"
+
+      - name: Update version
+        run: npm version ${{ github.event.inputs.version_type || 'patch' }}
+
+      - name: Push changes
+        run: |
+          git push origin main
+          git push origin --tags
+
       - name: Publish package to GitHub Packages
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Notify discord
         run: |
           VERSION=$(node -p "require('./package.json').version")
